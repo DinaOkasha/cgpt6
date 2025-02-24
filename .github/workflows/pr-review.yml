@@ -1,0 +1,50 @@
+# .github/workflows/pr-review.yml
+name: Automated PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Get PR Diff
+        id: get-diff
+        run: |
+          DIFF=$(gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }})
+          echo "diff<<EOF" >> $GITHUB_ENV
+          echo "$DIFF" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Send Diff to OpenAI API
+        id: ai-review
+        run: |
+          RESPONSE=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
+            -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "gpt-4-turbo",
+              "messages": [{"role": "system", "content": "You are a code reviewer. Provide concise, actionable feedback."},
+                           {"role": "user", "content": "'"${{ env.diff }}"'"}],
+              "max_tokens": 500
+            }' | jq -r '.choices[0].message.content')
+          
+          echo "review_comment<<EOF" >> $GITHUB_ENV
+          echo "$RESPONSE" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Post Review as PR Comment
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$RESPONSE"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESPONSE: ${{ env.review_comment }}
