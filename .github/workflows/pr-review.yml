@@ -30,7 +30,7 @@ jobs:
           RAW_RESPONSE=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"gpt-4-turbo\", \"messages\": [{\"role\": \"system\", \"content\": \"You are a code reviewer. Provide concise, actionable feedback on the following code changes.\"}, {\"role\": \"user\", \"content\": $DIFF}], \"max_tokens\": 500 }")
+            -d "{\"model\": \"gpt-3.5-turbo\", \"messages\": [{\"role\": \"system\", \"content\": \"You are a code reviewer. Provide concise, actionable feedback on the following code changes.\"}, {\"role\": \"user\", \"content\": $DIFF}], \"max_tokens\": 500 }")
 
           echo "RAW_RESPONSE: $RAW_RESPONSE"  # ✅ Debugging: Print API response
 
