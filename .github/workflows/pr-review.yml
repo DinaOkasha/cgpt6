@@ -17,10 +17,8 @@ jobs:
 
       - name: Get PR Diff
         run: |
-          DIFF=$(gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }})
-          echo "diff<<EOF" >> $GITHUB_ENV
-          echo "$DIFF" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          DIFF=$(gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }} | jq -Rs .)
+          echo "diff=$DIFF" >> $GITHUB_ENV
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -35,7 +33,7 @@ jobs:
             -d '{
               "model": "gpt-4-turbo",
               "messages": [{"role": "system", "content": "You are a code reviewer. Provide concise, actionable feedback on the following code changes."},
-                           {"role": "user", "content": "'"${{ env.diff }}"'"}],
+                           {"role": "user", "content": '${{ env.diff }}'}],
               "max_tokens": 500
             }')
 
@@ -58,3 +56,4 @@ jobs:
         run: gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$review_comment"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
