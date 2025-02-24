@@ -1,20 +1,21 @@
-# .github/workflows/pr-review.yml
 name: Automated PR Review
 
 on:
   pull_request:
     types: [opened, synchronize]
 
+permissions:
+  pull-requests: write  # ✅ Allows commenting on PRs
+
 jobs:
-  ai-review:
+  pr_review:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Get PR Diff
-        id: get-diff
         run: |
           DIFF=$(gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }})
           echo "diff<<EOF" >> $GITHUB_ENV
@@ -23,28 +24,37 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Send Diff to OpenAI API
-        id: ai-review
+      - name: Debug - Print PR Diff
+        run: echo "$diff"
+
+      - name: Send PR Diff to OpenAI API
         run: |
-          RESPONSE=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
+          RAW_RESPONSE=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d '{
               "model": "gpt-4-turbo",
-              "messages": [{"role": "system", "content": "You are a code reviewer. Provide concise, actionable feedback."},
+              "messages": [{"role": "system", "content": "You are a code reviewer. Provide concise, actionable feedback on the following code changes."},
                            {"role": "user", "content": "'"${{ env.diff }}"'"}],
               "max_tokens": 500
-            }' | jq -r '.choices[0].message.content')
-          
+            }')
+
+          echo "RAW_RESPONSE: $RAW_RESPONSE"  # ✅ Debugging: Print API response
+
+          RESPONSE=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content')
+
+          if [[ -z "$RESPONSE" || "$RESPONSE" == "null" ]]; then
+            echo "🚨 OpenAI returned an empty response! Check API key or request."
+            exit 1
+          fi
+
           echo "review_comment<<EOF" >> $GITHUB_ENV
           echo "$RESPONSE" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      - name: Post Review as PR Comment
-        run: |
-          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$RESPONSE"
+      - name: Post Review Comment on PR
+        run: gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$review_comment"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RESPONSE: ${{ env.review_comment }}
