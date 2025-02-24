@@ -1,54 +1,57 @@
-name: Automated PR Review
+name: Code Review Workflow
 
 on:
   pull_request:
-    types: [opened, synchronize]
-
-permissions:
-  pull-requests: write  # ✅ Allows commenting on PRs
+    paths:
+      - '**/*.py'  # Adjust the file path to match your project structure
 
 jobs:
-  pr_review:
+  review:
     runs-on: ubuntu-latest
-
     steps:
+      # Check out the repository
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Get PR Diff
-        run: |
-          DIFF=$(gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }} | jq -Rs .)
-          echo "DIFF=$DIFF" >> $GITHUB_ENV
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Set up OpenAI API key
+      - name: Set up OpenAI API key
+        run: echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
 
-      - name: Debug - Print PR Diff
-        run: echo "$DIFF"
-
-      - name: Send PR Diff to OpenAI API
+      # Add your code review step
+      - name: Review code with OpenAI
         run: |
           RAW_RESPONSE=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
-            -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
+            -H "Authorization: $OPENAI_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"gpt-3.5-turbo\", \"messages\": [{\"role\": \"system\", \"content\": \"You are a code reviewer. Provide concise, actionable feedback on the following code changes.\"}, {\"role\": \"user\", \"content\": $DIFF}], \"max_tokens\": 500 }")
-
+            -d "{\"model\": \"gpt-3.5-turbo\", \"messages\": [{\"role\": \"system\", \"content\": \"You are a code reviewer. Provide concise, actionable feedback on the following code changes.\"}, {\"role\": \"user\", \"content\": \"$DIFF\"}], \"max_tokens\": 500 }")
+          
           echo "RAW_RESPONSE: $RAW_RESPONSE"  # ✅ Debugging: Print API response
-
+          
+          # Check for quota error in the response
+          if [[ "$RAW_RESPONSE" == *"insufficient_quota"* ]]; then
+            echo "🚨 Your OpenAI API quota has been exceeded! Please check your plan."
+            exit 1
+          fi
+          
+          # Extract the review comment from the response
           RESPONSE=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content')
-
+          
+          # Check if the response is empty or null
           if [[ -z "$RESPONSE" || "$RESPONSE" == "null" ]]; then
             echo "🚨 OpenAI returned an empty response! Check API key or request."
             exit 1
           fi
-
+          
+          # Set the review comment in the GitHub environment
           echo "review_comment<<EOF" >> $GITHUB_ENV
           echo "$RESPONSE" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          
+      # Add a step to use the review comment as needed (e.g., post a comment on the pull request)
+      - name: Post review comment
+        uses: peter-evans/create-or-update-comment@v2
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ env.review_comment }}
 
-      - name: Post Review Comment on PR
-        run: gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "$review_comment"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
