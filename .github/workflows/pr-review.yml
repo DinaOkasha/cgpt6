@@ -18,24 +18,19 @@ jobs:
       - name: Get PR Diff
         run: |
           DIFF=$(gh pr diff ${{ github.event.pull_request.number }} --repo ${{ github.repository }} | jq -Rs .)
-          echo "diff=$DIFF" >> $GITHUB_ENV
+          echo "DIFF=$DIFF" >> $GITHUB_ENV
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Debug - Print PR Diff
-        run: echo "$diff"
+        run: echo "$DIFF"
 
       - name: Send PR Diff to OpenAI API
         run: |
           RAW_RESPONSE=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "model": "gpt-4-turbo",
-              "messages": [{"role": "system", "content": "You are a code reviewer. Provide concise, actionable feedback on the following code changes."},
-                           {"role": "user", "content": '${{ env.diff }}'}],
-              "max_tokens": 500
-            }')
+            -d "{\"model\": \"gpt-4-turbo\", \"messages\": [{\"role\": \"system\", \"content\": \"You are a code reviewer. Provide concise, actionable feedback on the following code changes.\"}, {\"role\": \"user\", \"content\": $DIFF}], \"max_tokens\": 500 }")
 
           echo "RAW_RESPONSE: $RAW_RESPONSE"  # ✅ Debugging: Print API response
 
