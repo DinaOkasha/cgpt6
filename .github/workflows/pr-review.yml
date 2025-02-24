@@ -2,8 +2,8 @@ name: Code Review Workflow
 
 on:
   pull_request:
-    paths:
-      - '**/*.py'  # Adjust the file path to match your project structure
+    branches:
+      - main  # Trigger workflow on pull requests targeting the 'main' branch
 
 jobs:
   review:
@@ -21,7 +21,7 @@ jobs:
       - name: Review code with OpenAI
         run: |
           RAW_RESPONSE=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
-            -H "Authorization: $OPENAI_API_KEY" \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"model\": \"gpt-3.5-turbo\", \"messages\": [{\"role\": \"system\", \"content\": \"You are a code reviewer. Provide concise, actionable feedback on the following code changes.\"}, {\"role\": \"user\", \"content\": \"$DIFF\"}], \"max_tokens\": 500 }")
           
@@ -30,6 +30,12 @@ jobs:
           # Check for quota error in the response
           if [[ "$RAW_RESPONSE" == *"insufficient_quota"* ]]; then
             echo "🚨 Your OpenAI API quota has been exceeded! Please check your plan."
+            exit 1
+          fi
+          
+          # Check for invalid API key error
+          if [[ "$RAW_RESPONSE" == *"invalid_request_error"* ]]; then
+            echo "🚨 Invalid API Key or incorrect request. Please verify the API key."
             exit 1
           fi
           
